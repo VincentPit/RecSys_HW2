@@ -121,7 +121,7 @@ def full_evaluate(model, test_df, all_user_item_df, num_items, device, K_list=[1
     }
 
 if __name__ == "__main__":
-    device = "cpu"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     
     # Load the train and validation data
     with open("../problem1/train.pkl", "rb") as f: 
