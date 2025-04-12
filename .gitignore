@@ -1,3 +1,7 @@
 ml-20m
 problem1/*.pkl
 problem1/*.png
+problem3/checkpoints
+*.sh
+problem3/*.pth
+problem4/*.pth

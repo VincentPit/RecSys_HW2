@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "b.py", line 1, in <module>
+    from a import NMF
+  File "/scratch/jl13122/RecSys_HW2/problem2/a.py", line 4, in <module>
+    from torchinfo import summary
+ModuleNotFoundError: No module named 'torchinfo'
