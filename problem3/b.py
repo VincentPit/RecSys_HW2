@@ -1,7 +1,7 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
+import time
 
 from problem2.a import NMF
 from a import MovieLensTripletDataset
@@ -35,29 +35,63 @@ def train_bpr(model, dataloader, val_data, optimizer, epochs=10, k=10, device='c
     bce_losses = []
 
     for epoch in range(epochs):
+        print(f"\nEpoch {epoch+1} start...")
+        epoch_start = time.time()
+
         model.train()
         total_loss = 0.0
-        for batch in dataloader:
+        train_start = time.time()
+
+        for batch_idx, batch in enumerate(dataloader):
+            
+            print("Start Batch:", batch_idx)
+            batch_start = time.time()
+
+            #Data loading time
             users, pos_items, neg_items = [x.to(device) for x in batch]
 
+            #Forward and loss
+            forward_start = time.time()
             pos_scores, neg_scores = model(users, pos_items, neg_items)
             loss = model.bpr_loss(pos_scores, neg_scores)
-
+            
+            forward_time = time.time() - forward_start
+            print(f"    - Forward+loss: {forward_time:.4f}s")
+            # Backward
+            backward_start = time.time()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            
+            backward_time = time.time() - backward_start
+            print(f"    - Backward+step: {backward_time:.4f}s")
+            
             total_loss += loss.item()
+            batch_time = time.time() - batch_start
+
+            if batch_idx == 0:  # Show timing for the first batch as a sample
+                print(f"  Batch {batch_idx} time: {batch_time:.4f}s")
+                print(f"    - Data+to(device): {forward_start - batch_start:.4f}s")
+                print(f"    - Forward+loss: {forward_time:.4f}s")
+                print(f"    - Backward+step: {backward_time:.4f}s")
 
         avg_loss = total_loss / len(dataloader)
         bce_losses.append(avg_loss)
 
+        train_time = time.time() - train_start
+        print(f"Training time: {train_time:.2f}s")
+
+        eval_start = time.time()
         recall = evaluate_recall(model.nmf, val_data, k=k)
+        eval_time = time.time() - eval_start
+
         recall_scores.append(recall)
 
         print(f"Epoch {epoch+1} | Loss: {avg_loss:.4f} | Recall@{k}: {recall:.4f}")
+        print(f"Evaluation time: {eval_time:.2f}s")
+        print(f"Total epoch time: {time.time() - epoch_start:.2f}s")
 
     return recall_scores, bce_losses
-
 
 def evaluate_recall(nmf_model, val_data, k=10):
     nmf_model.eval()
@@ -85,15 +119,13 @@ def plot_results(results, ylabel, title, save_dir="plots"):
     plt.title(title)
     plt.legend()
     plt.grid(True)
-    
-    # Save the plot instead of showing it
     filename = title.replace(" ", "_").lower() + ".png"
     plt.savefig(os.path.join(save_dir, filename), bbox_inches="tight")
     plt.close()
     
     
-def split_data(interactions, num_users, num_items, val_ratio=0.1, test_ratio=0.1):
-    np.random.seed(42)
+def split_data(interactions, val_ratio=0.1, test_ratio=0.1):
+    np.random.seed(1)
     user_pos = {}
     for u, i in interactions:
         user_pos.setdefault(u, set()).add(i)
@@ -141,7 +173,7 @@ def main():
     num_items = len(item2id)
 
     all_interactions = list(zip(interactions['userId'], interactions['movieId']))
-    train_data, val_data, test_data = split_data(all_interactions, num_users, num_items)
+    train_data, val_data, test_data = split_data(all_interactions)
 
     print(f"Train: {len(train_data)}, Val: {len(val_data)}, Test: {len(test_data)}")
 
@@ -177,6 +209,7 @@ def main():
                     best_config = (lr, wd)
                     best_recalls = recalls
                     best_losses = losses
+                    best_model_state = model.state_dict()
 
         label = f"neg_k={neg_k}, lr={best_config[0]}, wd={best_config[1]}"
         all_results[label] = {
@@ -189,11 +222,11 @@ def main():
         torch.save(best_model_state, model_path)
         print(f"Saved best model for {label} to {model_path}")
 
-    # Plotting
+    #Plot
     plot_results({k: v["recall"] for k, v in all_results.items()}, ylabel="Recall@10", title="Recall@10 vs Epochs")
     plot_results({k: v["loss"] for k, v in all_results.items()}, ylabel="BPR Loss", title="BPR Loss vs Epochs")
 
-    # Evaluation on test set
+    #Evaluation
     print("\nFinal Test Set Evaluation:")
     for label, result in all_results.items():
         neg_k = int(label.split(',')[0].split('=')[1])

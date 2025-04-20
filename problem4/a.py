@@ -18,7 +18,7 @@ class MovieLensSequenceDataset(Dataset):
 
     def _build_user_interactions(self, interactions):
         df = pd.DataFrame(interactions, columns=['user', 'item'])
-        df = df.sort_values(['user'])  # optional, can add timestamp if available
+        df = df.sort_values(['user'])
         user_seq = df.groupby('user')['item'].apply(list).to_dict()
         return user_seq
 
@@ -28,13 +28,12 @@ class MovieLensSequenceDataset(Dataset):
 
         for user, item_list in self.user_interactions.items():
             if len(item_list) < 2:
-                continue  # not enough history for sequence
+                continue  
 
             for i in range(1, len(item_list)):
                 seq = item_list[max(0, i - self.max_seq_len):i]
                 target = item_list[i]
 
-                # Sample 1 negative item not in user history
                 neg_item = np.random.randint(0, self.num_items)
                 while neg_item in item_list:
                     neg_item = np.random.randint(0, self.num_items)
@@ -48,8 +47,6 @@ class MovieLensSequenceDataset(Dataset):
 
     def __getitem__(self, idx):
         user, seq, pos_item, neg_item = self.sequences[idx]
-
-        # Padding
         padded_seq = np.zeros(self.max_seq_len, dtype=np.int64)
         padded_seq[-len(seq):] = seq
 

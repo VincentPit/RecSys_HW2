@@ -1,7 +1,12 @@
 import torch
 import numpy as np
 import random
+import pandas as pd
+
+import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
+
 from a import MovieLensSequenceDataset  
 from b import SASRec  
 
@@ -39,6 +44,8 @@ def sampled_eval(model, test_data, all_items, top_k=10, num_neg=100):
             ndcgs.append(1 / np.log2(rank_index + 2))
 
     return np.mean(hits), np.mean(ndcgs)
+
+
 def full_eval(model, test_data, all_items_tensor, top_k=10):
     model.eval()
     hits, ndcgs = [], []
@@ -55,14 +62,31 @@ def full_eval(model, test_data, all_items_tensor, top_k=10):
 
     return np.mean(hits), np.mean(ndcgs)
 
-optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-criterion = nn.CrossEntropyLoss(ignore_index=0)
+def get_num_users_items(ratings_path):
+    ratings_df = pd.read_csv(ratings_path)
+    num_users = ratings_df['userId'].nunique()
+    num_items = ratings_df['movieId'].nunique()
+    return num_users, num_items
+
+ratings_path = "../ml-20m/ratings.csv"
+num_users, num_items = get_num_users_items(ratings_path)
+
+print(f"Number of users: {num_users}")
+print(f"Number of items: {num_items}")
 
 dataset = MovieLensSequenceDataset(
-        ratings_path="../ml-20m/ratings.csv",
+        ratings_path=ratings_path,
         max_len=max_seq_len,
         split="train"
     )
+
+
+model = SASRec(num_users, num_items)
+
+optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+criterion = nn.CrossEntropyLoss(ignore_index=0)
+
+
 train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 val_dataset = MovieLensSequenceDataset(
@@ -82,8 +106,7 @@ test_dataset = MovieLensSequenceDataset(
 )
 
 all_items = list(range(len(dataset.item2id)))
-
-# === Build Model ===
+device = "cpu"
 model = SASRec(
     num_users=len(dataset.user2id),
     num_items=len(dataset.item2id),
@@ -93,8 +116,6 @@ model = SASRec(
     dropout=dropout
 ).to(device)
 
-
-# === Training Loop ===
 for epoch in range(num_epochs):
     model.train()
     total_loss = 0
@@ -116,14 +137,14 @@ for epoch in range(num_epochs):
     hr, ndcg = sampled_eval(model, val_dataset.eval_tuples, all_items, top_k=10)
     print(f"[Validation] HR@10: {hr:.4f}, NDCG@10: {ndcg:.4f}")
 
-# === Final Test Evaluation ===
+#Final Test Evaluation
 print("\nRunning Final Test Evaluation...")
 hr, ndcg = sampled_eval(model, test_dataset.eval_tuples, all_items, top_k=10)
 print(f"[Sampled Test] HR@10: {hr:.4f}, NDCG@10: {ndcg:.4f}")
 
-# === Bonus: Full Evaluation ===
+#Bonus: Full Evaluation
 full_hr, full_ndcg = full_eval(model, test_dataset.eval_tuples, torch.tensor(all_items).to(device), top_k=10)
 print(f"[Full Test] HR@10: {full_hr:.4f}, NDCG@10: {full_ndcg:.4f}")
 
-# === Save Results ===
+#Save Model
 torch.save(model.state_dict(), "sasrec_model.pth")

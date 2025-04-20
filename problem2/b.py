@@ -9,10 +9,10 @@ from torch.utils.data import Dataset, DataLoader
 import random
 import matplotlib.pyplot as plt
 from tqdm import tqdm 
-
+import time
 
 class MovieLensImplicitDataset(Dataset):
-    def __init__(self, interactions_df, num_items, num_negatives=4):
+    def __init__(self, interactions_df, num_items, num_negatives=4, device = "cpu"):
         self.users = []
         self.items = []
         self.labels = []
@@ -40,25 +40,58 @@ class MovieLensImplicitDataset(Dataset):
         return len(self.users)
 
     def __getitem__(self, idx):
-        return (
-            torch.LongTensor([self.users[idx]]).squeeze(),
+        
+        user, item, label = (torch.LongTensor([self.users[idx]]).squeeze(),
             torch.LongTensor([self.items[idx]]).squeeze(),
-            torch.FloatTensor([self.labels[idx]]).squeeze()
+            torch.FloatTensor([self.labels[idx]]).squeeze())
+        user, item, label = user.to(device), item.to(device), label.to(device)
+        
+        return (
+            user, item, label
         )
 
 def train(model, dataloader, optimizer, criterion, device):
     model.train()
     total_loss = 0
-    for user, item, label in dataloader:
-        user, item, label = user.to(device), item.to(device), label.to(device)
+    train_start = time.time()
+
+    data_load_time = 0.0
+    for batch_idx, batch in enumerate(tqdm(dataloader, desc="Training")):
+        batch_start = time.time()
+
+        # Time data loading separately
+        data_load_start = time.time()
+        user, item, label = batch
+        data_load_time_batch = time.time() - data_load_start
+        data_load_time += data_load_time_batch
+
+        # Forward pass and loss
+        forward_start = time.time()
         preds = model(user, item)
         loss = criterion(preds, label)
+        forward_time = time.time() - forward_start
+
+        # Backward pass and optimization
+        backward_start = time.time()
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        total_loss += loss.item()
-    return total_loss / len(dataloader)
+        backward_time = time.time() - backward_start
 
+        total_loss += loss.item()
+        batch_time = time.time() - batch_start
+
+        if batch_idx == 0:  # Print detailed timing only for the first batch
+            print(f"\nBatch {batch_idx} time: {batch_time:.4f}s")
+            print(f"  - data loading + to(device): {data_load_time_batch:.4f}s")
+            print(f"  - forward+loss: {forward_time:.4f}s")
+            print(f"  - backward+step: {backward_time:.4f}s")
+
+    total_time = time.time() - train_start
+    print(f"\nTotal training time: {total_time:.2f}s")
+    print(f"Total DataLoader time: {data_load_time:.2f}s ({100 * data_load_time / total_time:.2f}%)")
+
+    return total_loss / len(dataloader)
 @torch.no_grad()
 def sampled_evaluate(model, val_df, num_items, device, K=10):
     model.eval()
@@ -174,28 +207,20 @@ if __name__ == "__main__":
         for wd in wds:
             print(f"Training with LR={lr}, WD={wd}")
             model = NMF(num_users, num_items, latent_dim=50).to(device)
+            #optimizer = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=wd, momentum=0.9)
             optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
+            
+            #optimizer = torch.optim.SparseAdam(model.parameters(), lr=lr, weight_decay=wd)
+            
             criterion = nn.BCEWithLogitsLoss()
 
             train_losses = []
             val_recalls = []
+            
+            
 
             for epoch in tqdm(range(10), desc="Epochs", ncols=100):
-                train_loss = 0
-                model.train()
-                for batch in tqdm(train_loader, desc=f"Training Epoch {epoch+1}", ncols=100, leave=False):
-                    user, item, label = batch
-                    user, item, label = user.to(device), item.to(device), label.to(device)
-                    
-                    optimizer.zero_grad()
-                    preds = model(user, item)
-                    loss = criterion(preds, label)
-                    loss.backward()
-                    optimizer.step()
-
-                    train_loss += loss.item()
-
-                train_loss /= len(train_loader)
+                train_loss = train(model, train_loader, optimizer, criterion, device)
                 train_losses.append(train_loss)
                 
                 # Evaluation

@@ -5,16 +5,17 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from problem2.a import NMF
 from a import MovieLensTripletDataset
-from b import BPR
+from b import BPR, evaluate_recall
 
 import torch
 import torch.nn as nn
 import numpy as np
 import pandas as pd
 from torch.utils.data import DataLoader, random_split
+import torch.optim as optim
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-
+from sklearn.model_selection import train_test_split
 
 class DPR(nn.Module):
     def __init__(self, num_users, num_items, rank):
@@ -116,6 +117,30 @@ def plot_score_cdfs(model_bpr, model_dpr, num_users, num_items, device, save_pat
     plt.grid(True)
     plt.savefig(save_path)
     plt.close()
+    
+def load_implicit_feedback_data(ratings_path="../ml-20m/ratings.csv", neg_k=2, batch_size=256, val_ratio=0.1):
+
+    # Load the ratings file
+    ratings_df = pd.read_csv(ratings_path)
+    print("Ratings loaded.")
+    interactions = ratings_df[['userId', 'movieId']].drop_duplicates()
+
+    # Map userId and movieId to indices starting from 0
+    user2id = {uid: i for i, uid in enumerate(interactions['userId'].unique())}
+    item2id = {iid: i for i, iid in enumerate(interactions['movieId'].unique())}
+
+    interactions['userId'] = interactions['userId'].map(user2id)
+    interactions['movieId'] = interactions['movieId'].map(item2id)
+
+    num_users = len(user2id)
+    num_items = len(item2id)
+    interaction_tuples = list(zip(interactions['userId'], interactions['movieId']))
+    train_interactions, val_interactions = train_test_split(interaction_tuples, test_size=val_ratio, random_state=42)
+    train_dataset = MovieLensTripletDataset(interactions=train_interactions, num_items=num_items, neg_k=neg_k)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+    return num_users, num_items, train_loader, val_interactions
+
 
 
 def main():
@@ -129,18 +154,18 @@ def main():
 
     # Train BPR for comparison (assume pretrained or load if exists)
     model_bpr = BPR(num_users, num_items, rank).to(device)
-    model_bpr.load_state_dict(torch.load("checkpoints/bpr_models/bpr_best_model_neg_k5_lr0.01_wd0.1.pth"))
+    bpr_path = "checkpoints/bpr_models/bpr_best_model_neg_k5_lr0.01_wd0.1.pth"
+    if os.path.exists(bpr_path):
+        model_bpr.load_state_dict(torch.load(bpr_path))
+    else:
+        raise FileNotFoundError(f"BPR model not found at {bpr_path}")
     model_bpr.eval()
 
     # Train DPR
     model_dpr = DPR(num_users, num_items, rank).to(device)
     optimizer = optim.Adam(model_dpr.parameters(), lr=lr)
     recall_dpr, losses_dpr = train_dpr(model_dpr, train_loader, val_data, optimizer, epochs, k, device)
-
-    # Save model
     torch.save(model_dpr.state_dict(), "dpr_model.pth")
-
-    # Evaluate full recall
     full_recall = evaluate_recall(model_dpr, val_data, k, device, full=True, is_dpr=True)
     print(f"DPR Full Recall@{k}: {full_recall:.4f}")
 
@@ -149,7 +174,6 @@ def main():
         f.write(f"DPR Recall@{k} (sampled): {recall_dpr[-1]:.4f}\n")
         f.write(f"DPR Recall@{k} (full): {full_recall:.4f}\n")
 
-    # Plot CDFs
     plot_score_cdfs(model_bpr, model_dpr, num_users, num_items, device, save_path="score_cdfs.png")
 
 
