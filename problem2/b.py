@@ -21,12 +21,12 @@ class MovieLensImplicitDataset(Dataset):
         user_item_set = set(zip(interactions_df['userId'], interactions_df['movieId']))
 
         for user, item in user_item_set:
-            # Positive sample
+            # Positive 
             self.users.append(user)
             self.items.append(item)
             self.labels.append(1)
 
-            # Negative samples
+            # Negative 
             for _ in range(num_negatives):
                 neg_item = random.randint(0, num_items - 1)  # Ensure it falls within the reindexed item range
                 while (user, neg_item) in user_item_set:  # Ensure it's a negative sample
@@ -81,7 +81,7 @@ def train(model, dataloader, optimizer, criterion, device):
         total_loss += loss.item()
         batch_time = time.time() - batch_start
 
-        if batch_idx == 0:  # Print detailed timing only for the first batch
+        if batch_idx == 0:  # Print timing only for the first batch
             print(f"\nBatch {batch_idx} time: {batch_time:.4f}s")
             print(f"  - data loading + to(device): {data_load_time_batch:.4f}s")
             print(f"  - forward+loss: {forward_time:.4f}s")
@@ -156,17 +156,14 @@ def full_evaluate(model, test_df, all_user_item_df, num_items, device, K_list=[1
 if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
-    # Load the train and validation data
     with open("../problem1/train.pkl", "rb") as f: 
         train_df = pickle.load(f)
     with open("../problem1/val.pkl", "rb") as f: 
         val_df = pickle.load(f)
     
-    # Filter out rows with ratings <= 0
     train_df = train_df[train_df['rating'] > 0]
     val_df = val_df[val_df['rating'] > 0]
     
-    # Reindex users and items
     unique_user_ids = train_df['userId'].unique()
     unique_item_ids = train_df['movieId'].unique()
 
@@ -177,12 +174,11 @@ if __name__ == "__main__":
     num_users = len(user2id)+1
     num_items = len(item2id)+1
     
-    # Reindexing train and validation datasets
+    # Reindexing 
     train_df['userId'] = train_df['userId'].map(user2id)
     train_df['movieId'] = train_df['movieId'].map(item2id)
-    
-    val_df = val_df[val_df['userId'].isin(user2id)]  # Ensure we only have users in val_df that exist in user2id
-    val_df = val_df[val_df['movieId'].isin(item2id)]  # Ensure we only have items in val_df that exist in item2id
+    val_df = val_df[val_df['userId'].isin(user2id)]  
+    val_df = val_df[val_df['movieId'].isin(item2id)]  
 
     val_df['userId'] = val_df['userId'].map(user2id)
     val_df['movieId'] = val_df['movieId'].map(item2id)
@@ -255,8 +251,6 @@ if __name__ == "__main__":
     best_config = max(results.items(), key=lambda x: x[1]['recall@10'][-1])[0]
     best_lr, best_wd = best_config
     print(f"\nBest config: LR={best_lr}, WD={best_wd}")
-
-    # Retrain best model (optional: you can reuse last trained model if stored)
     best_model = NMF(num_users, num_items, latent_dim=50).to(device)
     optimizer = optim.Adam(best_model.parameters(), lr=best_lr, weight_decay=best_wd)
     criterion = nn.BCEWithLogitsLoss()

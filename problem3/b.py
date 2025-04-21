@@ -42,34 +42,30 @@ def train_bpr(model, dataloader, val_data, optimizer, epochs=10, k=10, device='c
         total_loss = 0.0
         train_start = time.time()
 
-        for batch_idx, batch in enumerate(dataloader):
-            
-            print("Start Batch:", batch_idx)
+        # tqdm over batches
+        progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Epoch {epoch+1}")
+        for batch_idx, batch in progress_bar:
             batch_start = time.time()
-
-            #Data loading time
             users, pos_items, neg_items = [x.to(device) for x in batch]
 
-            #Forward and loss
+            # Forward and loss
             forward_start = time.time()
             pos_scores, neg_scores = model(users, pos_items, neg_items)
             loss = model.bpr_loss(pos_scores, neg_scores)
-            
             forward_time = time.time() - forward_start
-            print(f"    - Forward+loss: {forward_time:.4f}s")
+
             # Backward
-            backward_start = time.time()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            
-            backward_time = time.time() - backward_start
-            print(f"    - Backward+step: {backward_time:.4f}s")
-            
+            backward_time = time.time() - forward_start - forward_time
+
             total_loss += loss.item()
-            batch_time = time.time() - batch_start
+            avg_loss_so_far = total_loss / (batch_idx + 1)
+            progress_bar.set_postfix(loss=f"{avg_loss_so_far:.4f}")
 
             if batch_idx == 0:  # Show timing for the first batch as a sample
+                batch_time = time.time() - batch_start
                 print(f"  Batch {batch_idx} time: {batch_time:.4f}s")
                 print(f"    - Data+to(device): {forward_start - batch_start:.4f}s")
                 print(f"    - Forward+loss: {forward_time:.4f}s")
