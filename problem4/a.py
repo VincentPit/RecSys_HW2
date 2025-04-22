@@ -4,39 +4,82 @@ from torch.utils.data import Dataset, DataLoader
 import pandas as pd
 
 class MovieLensSequenceDataset(Dataset):
-    def __init__(self, interactions, num_items, max_seq_len=50):
+    def __init__(
+        self,
+        ratings_path=None,
+        interactions=None,
+        max_seq_len=50,
+        split="train",
+        user2id=None,
+        item2id=None,
+        test_ratio=0.1,
+        val_ratio=0.1
+    ):
         """
-        interactions: list of (user, item) tuples
-        num_items: total number of items
-        max_seq_len: maximum sequence length
+        Either `ratings_path` or `interactions` must be provided.
         """
-        self.num_items = num_items
+
+        assert ratings_path is not None or interactions is not None, "Need ratings_path or interactions"
+
         self.max_seq_len = max_seq_len
-        self.user_interactions = self._build_user_interactions(interactions)
-        self.sequences = self._create_sequences()
-        print("Sequential dataset built.")
+        self.split = split.lower()
 
-    def _build_user_interactions(self, interactions):
-        df = pd.DataFrame(interactions, columns=['user', 'item'])
-        df = df.sort_values(['user'])
-        user_seq = df.groupby('user')['item'].apply(list).to_dict()
-        return user_seq
+        if ratings_path:
+            ratings_df = pd.read_csv(ratings_path)
+        else:
+            #userId,movieId,rating,timestamp
+            ratings_df = pd.DataFrame(interactions, columns=["userId", "movieId"])
 
-    def _create_sequences(self):
-        np.random.seed(1)
+        ratings_df = ratings_df.sort_values(["userId", "timestamp"] if "timestamp" in ratings_df.columns else ["user"])
+
+        # Create user and item mappings
+        if user2id is None:
+            self.user2id = {u: i for i, u in enumerate(ratings_df["userId"].unique())}
+        else:
+            self.user2id = user2id
+
+        if item2id is None:
+            self.item2id = {i: j for j, i in enumerate(ratings_df["movieId"].unique())}
+        else:
+            self.item2id = item2id
+
+        ratings_df["user"] = ratings_df["userId"].map(self.user2id)
+        ratings_df["item"] = ratings_df["movieId"].map(self.item2id)
+
+        self.num_items = len(self.item2id)
+        self.user_interactions = ratings_df.groupby("user")["item"].apply(list).to_dict()
+
+        self.sequences = self._create_sequences(split, val_ratio, test_ratio)
+        print(f"{split.capitalize()} dataset built: {len(self.sequences)} sequences")
+
+    def _create_sequences(self, split, val_ratio, test_ratio):
         sequences = []
+        np.random.seed(1)
 
         for user, item_list in self.user_interactions.items():
-            if len(item_list) < 2:
-                continue  
+            if len(item_list) < 3:
+                continue
 
-            for i in range(1, len(item_list)):
+            n_total = len(item_list)
+            n_test = int(n_total * test_ratio)
+            n_val = int(n_total * val_ratio)
+
+            if split == "train":
+                item_range = range(1, n_total - n_val - n_test)
+            elif split == "val":
+                item_range = range(n_total - n_val - n_test, n_total - n_test)
+            elif split == "test":
+                item_range = range(n_total - n_test, n_total)
+            else:
+                raise ValueError("split must be 'train', 'val', or 'test'")
+
+            for i in item_range:
                 seq = item_list[max(0, i - self.max_seq_len):i]
                 target = item_list[i]
 
-                neg_item = np.random.randint(0, self.num_items)
+                neg_item = np.random.randint(self.num_items)
                 while neg_item in item_list:
-                    neg_item = np.random.randint(0, self.num_items)
+                    neg_item = np.random.randint(self.num_items)
 
                 sequences.append((user, seq, target, neg_item))
 
@@ -50,36 +93,34 @@ class MovieLensSequenceDataset(Dataset):
         padded_seq = np.zeros(self.max_seq_len, dtype=np.int64)
         padded_seq[-len(seq):] = seq
 
-        return (
-            user,
-            padded_seq,
-            pos_item,
-            neg_item,
-        )
+        return user, padded_seq, pos_item, neg_item
         
         
 if __name__ == "__main__":
-    ratings_file = "../ml-20m/ratings.csv"
-    ratings_df = pd.read_csv(ratings_file)
+    ratings_path = "../ml-20m/ratings.csv"
+    max_seq_len = 50
+    batch_size = 1024
+    
+    train_dataset = MovieLensSequenceDataset(
+        ratings_path=ratings_path,
+        max_seq_len=max_seq_len,
+        split="train"
+    )
 
-    interactions = ratings_df[['userId', 'movieId']].drop_duplicates()
-    user2id = {uid: i for i, uid in enumerate(interactions['userId'].unique())}
-    item2id = {iid: i for i, iid in enumerate(interactions['movieId'].unique())}
-    interactions['userId'] = interactions['userId'].map(user2id)
-    interactions['movieId'] = interactions['movieId'].map(item2id)
+    val_dataset = MovieLensSequenceDataset(
+        ratings_path=ratings_path,
+        max_seq_len=max_seq_len,
+        split="val",
+        user2id=train_dataset.user2id,
+        item2id=train_dataset.item2id
+    )
 
-    num_users = len(user2id)
-    num_items = len(item2id)
+    test_dataset = MovieLensSequenceDataset(
+        ratings_path=ratings_path,
+        max_seq_len=max_seq_len,
+        split="test",
+        user2id=train_dataset.user2id,
+        item2id=train_dataset.item2id
+    )
 
-    interaction_tuples = list(zip(interactions['userId'], interactions['movieId']))
-
-    seq_dataset = MovieLensSequenceDataset(interactions=interaction_tuples, num_items=num_items, max_seq_len=10)
-    dataloader = DataLoader(seq_dataset, batch_size=4, shuffle=True)
-
-    for user, seq, pos_item, neg_item in dataloader:
-        print("User:", user)
-        print("Sequence:", seq)
-        print("Pos Item:", pos_item)
-        print("Neg Item:", neg_item)
-        break
-
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)

@@ -29,7 +29,7 @@ class BPR(torch.nn.Module):
     def bpr_loss(self, pos_scores, neg_scores):
         return -torch.log(self.sigmoid(pos_scores - neg_scores)).mean()
 
-def train_bpr(model, dataloader, val_data, optimizer, epochs=10, k=10, device='cpu'):
+def train_bpr(model, dataloader, val_data, optimizer, num_items, epochs=10, k=10, device='cpu'):
     model.to(device)
     recall_scores = []
     bce_losses = []
@@ -78,7 +78,7 @@ def train_bpr(model, dataloader, val_data, optimizer, epochs=10, k=10, device='c
         print(f"Training time: {train_time:.2f}s")
 
         eval_start = time.time()
-        recall = evaluate_recall(model.nmf, val_data, k=k)
+        recall = evaluate_recall(model.nmf,num_items, val_data, k=k)
         eval_time = time.time() - eval_start
 
         recall_scores.append(recall)
@@ -89,13 +89,13 @@ def train_bpr(model, dataloader, val_data, optimizer, epochs=10, k=10, device='c
 
     return recall_scores, bce_losses
 
-def evaluate_recall(nmf_model, val_data, k=10):
+def evaluate_recall(nmf_model, num_items, val_data, k=10):
     nmf_model.eval()
     hits = 0
     with torch.no_grad():
         for user, true_item in val_data:
             user_tensor = torch.tensor([user])
-            all_items = torch.arange(nmf_model.item_factors.size(0))
+            all_items = torch.arange(num_items)
 
             scores = nmf_model(user_tensor.expand_as(all_items), all_items)
             top_k = scores.topk(k).indices
@@ -197,7 +197,7 @@ def main():
                 model = BPR(num_users, num_items, rank).to(device)
                 optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
 
-                recalls, losses = train_bpr(model, dataloader, val_data, optimizer,
+                recalls, losses = train_bpr(model, dataloader, val_data, optimizer, num_items,
                                             epochs=epochs, k=10, device=device)
 
                 if max(recalls) > best_recall:
@@ -234,8 +234,8 @@ def main():
         optimizer = torch.optim.Adam(model.parameters(), lr=float(label.split(',')[1].split('=')[1]),
                                      weight_decay=float(label.split(',')[2].split('=')[1]))
 
-        train_bpr(model, dataloader, val_data, optimizer, epochs=epochs, k=10, device=device)
-        recall_test = evaluate_recall(model.nmf, test_data, k=10)
+        train_bpr(model, dataloader, val_data, optimizer,num_items, epochs=epochs, k=10, device=device)
+        recall_test = evaluate_recall(model.nmf, num_items, test_data, k=10)
         print(f"Recall@10 on Test Set ({label}): {recall_test:.4f}")
 
 if __name__ == "__main__":

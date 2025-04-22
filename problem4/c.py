@@ -73,13 +73,14 @@ num_users, num_items = get_num_users_items(ratings_path)
 
 print(f"Number of users: {num_users}")
 print(f"Number of items: {num_items}")
+ratings_df = pd.read_csv(ratings_path)
 
-dataset = MovieLensSequenceDataset(
-        ratings_path=ratings_path,
-        max_len=max_seq_len,
-        split="train"
-    )
 
+train_dataset = MovieLensSequenceDataset(
+    ratings_path=ratings_path,
+    max_seq_len=max_seq_len,
+    split="train"
+)
 
 model = SASRec(num_users, num_items)
 
@@ -87,29 +88,29 @@ optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 criterion = nn.CrossEntropyLoss(ignore_index=0)
 
 
-train_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
 val_dataset = MovieLensSequenceDataset(
-    ratings_path="../ml-20m/ratings.csv",
-    max_len=max_seq_len,
+    ratings_path=ratings_path,
+    max_seq_len=max_seq_len,
     split="val",
-    user2id=dataset.user2id,
-    item2id=dataset.item2id
+    user2id=train_dataset.user2id,
+    item2id=train_dataset.item2id
 )
 
 test_dataset = MovieLensSequenceDataset(
-    ratings_path="../ml-20m/ratings.csv",
-    max_len=max_seq_len,
+    ratings_path=ratings_path,
+    max_seq_len=max_seq_len,
     split="test",
-    user2id=dataset.user2id,
-    item2id=dataset.item2id
+    user2id=train_dataset.user2id,
+    item2id=train_dataset.item2id
 )
 
-all_items = list(range(len(dataset.item2id)))
+all_items = list(range(len(train_dataset.item2id)))
 device = "cpu"
 model = SASRec(
-    num_users=len(dataset.user2id),
-    num_items=len(dataset.item2id),
+    num_users=len(train_dataset.user2id),
+    num_items=len(train_dataset.item2id),
     max_seq_len=max_seq_len,
     hidden_dim=hidden_dim,
     num_heads=num_heads,
@@ -120,13 +121,13 @@ for epoch in range(num_epochs):
     model.train()
     total_loss = 0
     for batch in train_loader:
-        user_seq = batch['seq'].to(device)
-        target = batch['target'].to(device)
+        user, padded_seq, pos_item, neg_item = batch
+        padded_seq = padded_seq.to(device)
+        pos_item = pos_item.to(device).long()
 
         optimizer.zero_grad()
-        logits = model(None, user_seq)  # (B, T, num_items)
-        logits = logits[:, -1, :]       # last position
-        loss = criterion(logits, target)
+        logits = model(None, padded_seq)   # (B, num_items)
+        loss = criterion(logits, pos_item)
         loss.backward()
         optimizer.step()
 

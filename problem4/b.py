@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 
 class SASRec(nn.Module):
-    def __init__(self, num_users, num_items, hidden_dim=64, max_seq_len=50, num_heads=2, dropout_rate=0.2):
+    def __init__(self, num_users, num_items, hidden_dim=64, max_seq_len=50, num_heads=2, dropout=0.2):
         super(SASRec, self).__init__()
 
         self.num_users = num_users
@@ -17,11 +17,11 @@ class SASRec(nn.Module):
         self.position_embedding = nn.Embedding(max_seq_len, hidden_dim)
 
         # Dropout
-        self.dropout = nn.Dropout(dropout_rate)
+        self.dropout = nn.Dropout(dropout)
 
         # Two stacked self-attention blocks
         self.attention_blocks = nn.ModuleList([
-            SelfAttentionBlock(hidden_dim, num_heads, dropout_rate)
+            SelfAttentionBlock(hidden_dim, num_heads, dropout)
             for _ in range(2)
         ])
 
