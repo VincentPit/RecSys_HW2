@@ -15,6 +15,16 @@ from torch.utils.data import DataLoader, random_split
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
+class RecallEvalDataset(Dataset):
+    def __init__(self, val_data):
+        self.val_data = val_data
+
+    def __len__(self):
+        return len(self.val_data)
+
+    def __getitem__(self, idx):
+        return self.val_data[idx]
+
 class BPR(torch.nn.Module):
     def __init__(self, num_users, num_items, rank):
         super().__init__()
@@ -89,19 +99,36 @@ def train_bpr(model, dataloader, val_data, optimizer, num_items, epochs=10, k=10
 
     return recall_scores, bce_losses
 
-def evaluate_recall(nmf_model, num_items, val_data, k=10):
+def evaluate_recall(nmf_model, num_items, val_data, k=10, batch_size=1024, device='cpu'):
     nmf_model.eval()
     hits = 0
-    with torch.no_grad():
-        for user, true_item in val_data:
-            user_tensor = torch.tensor([user])
-            all_items = torch.arange(num_items)
+    total = 0
+    dataloader = DataLoader(RecallEvalDataset(val_data), batch_size=batch_size, shuffle=False)
 
-            scores = nmf_model(user_tensor.expand_as(all_items), all_items)
-            top_k = scores.topk(k).indices
-            if true_item in top_k:
-                hits += 1
-    return hits / len(val_data)
+    all_items = torch.arange(num_items, device=device)  # [num_items]
+
+    with torch.no_grad():
+        for user_batch, true_item_batch in tqdm(dataloader):
+            user_batch = user_batch.to(device)
+            true_item_batch = true_item_batch.to(device)
+
+            batch_size_actual = user_batch.size(0)
+            user_expanded = user_batch.view(-1, 1).expand(-1, num_items).reshape(-1).to(device)
+            item_expanded = all_items.repeat(batch_size_actual)
+
+            # Compute scores: [batch_size * num_items]
+            scores = nmf_model(user_expanded, item_expanded).view(batch_size_actual, num_items)
+
+            # Top-k over items for each user
+            top_k_items = scores.topk(k, dim=1).indices
+
+            # Count hits
+            for i in range(batch_size_actual):
+                if true_item_batch[i] in top_k_items[i]:
+                    hits += 1
+            total += batch_size_actual
+
+    return hits / total
 
 
 

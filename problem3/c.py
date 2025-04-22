@@ -51,7 +51,7 @@ def kl_regularization(mean, logvar):
     return -0.5 * torch.mean(1 + logvar - mean.pow(2) - logvar.exp())
 
 
-def train_dpr(model, dataloader, val_data, optimizer, epochs, k, device):
+def train_dpr(model, dataloader, val_data, optimizer, num_items, epochs, k, device):
     model.train()
     recalls = []
     losses = []
@@ -75,7 +75,7 @@ def train_dpr(model, dataloader, val_data, optimizer, epochs, k, device):
             optimizer.step()
             total_loss += loss.item()
 
-        recall = evaluate_recall(model, val_data, k, device, is_dpr=True)
+        recall = evaluate_recall(model,num_items,val_data, k, device, is_dpr=True)
         losses.append(total_loss / len(dataloader))
         recalls.append(recall)
         print(f"Epoch {epoch+1}: Loss={losses[-1]:.4f}, Recall@{k}={recall:.4f}")
@@ -164,9 +164,9 @@ def main():
     # Train DPR
     model_dpr = DPR(num_users, num_items, rank).to(device)
     optimizer = optim.Adam(model_dpr.parameters(), lr=lr)
-    recall_dpr, losses_dpr = train_dpr(model_dpr, train_loader, val_data, optimizer, epochs, k, device)
+    recall_dpr, losses_dpr = train_dpr(model_dpr, train_loader, val_data, optimizer, num_items, epochs, k, device)
     torch.save(model_dpr.state_dict(), "dpr_model.pth")
-    full_recall = evaluate_recall(model_dpr, val_data, k, device, full=True, is_dpr=True)
+    full_recall = evaluate_recall(model_dpr,num_items, val_data, k, device, full=True, is_dpr=True)
     print(f"DPR Full Recall@{k}: {full_recall:.4f}")
 
     # Save results to file
