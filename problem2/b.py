@@ -41,15 +41,23 @@ class MovieLensImplicitDataset(Dataset):
 
     def __getitem__(self, idx):
         
-        user, item, label = (torch.LongTensor([self.users[idx]]).squeeze(),
+        """user, item, label = (torch.LongTensor([self.users[idx]]).squeeze(),
             torch.LongTensor([self.items[idx]]).squeeze(),
             torch.FloatTensor([self.labels[idx]]).squeeze())
         user, item, label = user.to(device), item.to(device), label.to(device)
         
         return (
             user, item, label
+        )"""
+        
+        user, item = self.users[idx], self.items[idx]
+        label = float(self.labels[idx])
+        
+        return (
+            user, item, label
         )
-
+        
+        
 def train(model, dataloader, optimizer, criterion, device):
     model.train()
     total_loss = 0

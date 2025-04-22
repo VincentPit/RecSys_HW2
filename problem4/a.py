@@ -51,10 +51,10 @@ class MovieLensSequenceDataset(Dataset):
         padded_seq[-len(seq):] = seq
 
         return (
-            torch.tensor(user, dtype=torch.long),
-            torch.tensor(padded_seq, dtype=torch.long),
-            torch.tensor(pos_item, dtype=torch.long),
-            torch.tensor(neg_item, dtype=torch.long)
+            user,
+            padded_seq,
+            pos_item,
+            neg_item,
         )
         
         

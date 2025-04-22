@@ -178,7 +178,7 @@ def main():
     weight_decays = [1e-1, 1e-2]
     rank = 64
     batch_size = 2048
-    epochs = 20
+    epochs = 10
 
     all_results = {}
 

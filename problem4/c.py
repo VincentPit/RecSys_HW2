@@ -15,7 +15,7 @@ max_seq_len = 50
 hidden_dim = 50
 batch_size = 128
 num_heads = 1
-num_epochs = 100
+num_epochs = 10
 lr = 0.001
 dropout = 0.2
 

@@ -56,7 +56,7 @@ class MovieLensTripletDataset(Dataset):
         return len(self.triplets)
 
     def __getitem__(self, idx):
-        return tuple(map(torch.tensor, self.triplets[idx]))
+        return self.triplets[idx]
 
 
 
@@ -88,11 +88,10 @@ if __name__ == "__main__":
     print(f"Total positive interactions: {len(interaction_tuples)}")
 
    
-    neg_k = 2  # 2 negative samples per positive
+    neg_k = 2 
     dataset = MovieLensTripletDataset(interactions=interaction_tuples, num_items=num_items, neg_k=neg_k)
     print("Dataset created.")
     
-    # Wrap in a DataLoader if needed
     dataloader = DataLoader(dataset, batch_size=4, shuffle=True)
     print("Data loader created.")
     # Print a few samples

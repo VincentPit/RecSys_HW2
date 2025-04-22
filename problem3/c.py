@@ -148,7 +148,7 @@ def main():
     num_users, num_items, train_loader, val_data = load_implicit_feedback_data()
 
     rank = 64
-    epochs = 30
+    epochs = 10
     k = 10
     lr = 1e-3
 
