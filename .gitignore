@@ -6,6 +6,6 @@ problem3/checkpoints
 problem3/*.pth
 problem4/*.pth
 problem2/outputs
-problem2/error
+problem2/errors
 34errors
 34outputs
