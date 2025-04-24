@@ -5,3 +5,7 @@ problem3/checkpoints
 *.sh
 problem3/*.pth
 problem4/*.pth
+problem2/outputs
+problem2/error
+34errors
+34outputs

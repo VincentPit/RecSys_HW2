@@ -144,7 +144,7 @@ hr, ndcg = sampled_eval(model, test_dataset.eval_tuples, all_items, top_k=10)
 print(f"[Sampled Test] HR@10: {hr:.4f}, NDCG@10: {ndcg:.4f}")
 
 #Bonus: Full Evaluation
-full_hr, full_ndcg = full_eval(model, test_dataset.eval_tuples, torch.tensor(all_items).to(device), top_k=10)
+full_hr, full_ndcg = sampled_eval(model, test_dataset.eval_tuples, torch.tensor(all_items).to(device), top_k=10)
 print(f"[Full Test] HR@10: {full_hr:.4f}, NDCG@10: {full_ndcg:.4f}")
 
 #Save Model

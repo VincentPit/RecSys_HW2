@@ -98,8 +98,8 @@ def train(model, dataloader, optimizer, criterion, device):
     total_time = time.time() - train_start
     print(f"\nTotal training time: {total_time:.2f}s")
     print(f"Total DataLoader time: {data_load_time:.2f}s ({100 * data_load_time / total_time:.2f}%)")
-
     return total_loss / len(dataloader)
+
 @torch.no_grad()
 def sampled_evaluate(model, val_df, num_items, device, K=10):
     model.eval()
@@ -110,7 +110,7 @@ def sampled_evaluate(model, val_df, num_items, device, K=10):
         positives = list(user_item_dict[user])
         candidate_items = set(range(num_items)) - set(positives)
         if len(candidate_items) < 99:
-            continue  # Skip if not enough negatives to sample from
+            continue
 
         negatives = random.sample(list(candidate_items), 99)
         items = torch.tensor([positives[0]] + negatives).long().to(device)
@@ -221,9 +221,7 @@ if __name__ == "__main__":
             train_losses = []
             val_recalls = []
             
-            
-
-            for epoch in tqdm(range(10), desc="Epochs", ncols=100):
+            for epoch in tqdm(range(5), desc="Epochs", ncols=100):
                 train_loss = train(model, train_loader, optimizer, criterion, device)
                 train_losses.append(train_loss)
                 

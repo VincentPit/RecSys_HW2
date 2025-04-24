@@ -5,8 +5,8 @@ import time
 
 from problem2.a import NMF
 from a import MovieLensTripletDataset
-
-
+from torch.utils.data import Subset
+import random
 import torch
 import torch.nn as nn
 import numpy as np
@@ -39,7 +39,7 @@ class BPR(torch.nn.Module):
     def bpr_loss(self, pos_scores, neg_scores):
         return -torch.log(self.sigmoid(pos_scores - neg_scores)).mean()
 
-def train_bpr(model, dataloader, val_data, optimizer, num_items, epochs=10, k=10, device='cpu'):
+def train_bpr(model, dataloader, val_data, optimizer, num_items, epochs=5, k=10, device='cpu'):
     model.to(device)
     recall_scores = []
     bce_losses = []
@@ -99,11 +99,16 @@ def train_bpr(model, dataloader, val_data, optimizer, num_items, epochs=10, k=10
 
     return recall_scores, bce_losses
 
-def evaluate_recall(nmf_model, num_items, val_data, k=10, batch_size=1024, device='cpu'):
+def evaluate_recall(nmf_model, num_items, val_data, k=10, batch_size=256, device='cpu', num_users_sample=1000):
+    print(f"Using batch size: {batch_size}, Sampling {num_users_sample} users")
     nmf_model.eval()
     hits = 0
     total = 0
-    dataloader = DataLoader(RecallEvalDataset(val_data), batch_size=batch_size, shuffle=False)
+
+    # Sample 1000 users (or fewer if val_data is smaller)
+    indices = random.sample(range(len(val_data)), min(num_users_sample, len(val_data)))
+    sampled_dataset = Subset(RecallEvalDataset(val_data), indices)
+    dataloader = DataLoader(sampled_dataset, batch_size=batch_size, shuffle=False)
 
     all_items = torch.arange(num_items, device=device)  # [num_items]
 
@@ -113,19 +118,13 @@ def evaluate_recall(nmf_model, num_items, val_data, k=10, batch_size=1024, devic
             true_item_batch = true_item_batch.to(device)
 
             batch_size_actual = user_batch.size(0)
-            user_expanded = user_batch.view(-1, 1).expand(-1, num_items).reshape(-1).to(device)
+            user_expanded = user_batch.view(-1, 1).expand(-1, num_items).reshape(-1)
             item_expanded = all_items.repeat(batch_size_actual)
 
-            # Compute scores: [batch_size * num_items]
             scores = nmf_model(user_expanded, item_expanded).view(batch_size_actual, num_items)
-
-            # Top-k over items for each user
             top_k_items = scores.topk(k, dim=1).indices
 
-            # Count hits
-            for i in range(batch_size_actual):
-                if true_item_batch[i] in top_k_items[i]:
-                    hits += 1
+            hits += (top_k_items == true_item_batch.unsqueeze(1)).any(dim=1).sum().item()
             total += batch_size_actual
 
     return hits / total
@@ -196,16 +195,20 @@ def main():
     num_items = len(item2id)
 
     all_interactions = list(zip(interactions['userId'], interactions['movieId']))
+    
     train_data, val_data, test_data = split_data(all_interactions)
-
+   
     print(f"Train: {len(train_data)}, Val: {len(val_data)}, Test: {len(test_data)}")
-
+    rank = 64
+    model = BPR(num_users, num_items, rank)
+    
+    print("Evaluation before Training:", evaluate_recall(model.nmf, num_items, val_data, k=10))
     neg_k_values = [5, 20]
     learning_rates = [1e-2, 1e-3]
     weight_decays = [1e-1, 1e-2]
-    rank = 64
+    
     batch_size = 2048
-    epochs = 10
+    epochs = 5
 
     all_results = {}
 
@@ -214,13 +217,13 @@ def main():
         best_config = None
         best_recalls = []
         best_losses = []
+        #Build new dataset when neg_k updataes
+        dataset = MovieLensTripletDataset(train_data, num_items, neg_k)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
         for lr in learning_rates:
             for wd in weight_decays:
                 print(f"\nTraining BPR with neg_k={neg_k}, lr={lr}, wd={wd}")
-                dataset = MovieLensTripletDataset(train_data, num_items, neg_k)
-                dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
-
                 model = BPR(num_users, num_items, rank).to(device)
                 optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
 
@@ -233,15 +236,19 @@ def main():
                     best_recalls = recalls
                     best_losses = losses
                     best_model_state = model.state_dict()
+                
+                # Free up memory immediately
+        del dataset
+        del dataloader
 
         label = f"neg_k={neg_k}, lr={best_config[0]}, wd={best_config[1]}"
         all_results[label] = {
             "recall": best_recalls,
             "loss": best_losses
         }
-        
-        
         model_path = f"checkpoints/bpr_best_model_{label.replace(', ', '_').replace('=', '')}.pth"
+        
+        print(f"Saving best model for {label} to {model_path}")
         torch.save(best_model_state, model_path)
         print(f"Saved best model for {label} to {model_path}")
 
@@ -262,8 +269,12 @@ def main():
                                      weight_decay=float(label.split(',')[2].split('=')[1]))
 
         train_bpr(model, dataloader, val_data, optimizer,num_items, epochs=epochs, k=10, device=device)
+        
         recall_test = evaluate_recall(model.nmf, num_items, test_data, k=10)
+        
         print(f"Recall@10 on Test Set ({label}): {recall_test:.4f}")
+        del dataset
+        del dataloader
 
 if __name__ == "__main__":
     main()
