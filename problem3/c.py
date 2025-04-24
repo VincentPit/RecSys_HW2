@@ -5,7 +5,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from problem2.a import NMF
 from a import MovieLensTripletDataset
-from b import BPR, evaluate_recall
+from b import BPR
 
 import torch
 import torch.nn as nn
@@ -75,7 +75,7 @@ def train_dpr(model, dataloader, val_data, optimizer, num_items, epochs, k, devi
             optimizer.step()
             total_loss += loss.item()
 
-        recall = evaluate_recall(model,num_items,val_data, k, device, is_dpr=True)
+        recall = evaluate_recall(model,num_items,val_data, k, device)
         losses.append(total_loss / len(dataloader))
         recalls.append(recall)
         print(f"Epoch {epoch+1}: Loss={losses[-1]:.4f}, Recall@{k}={recall:.4f}")
@@ -95,7 +95,7 @@ def plot_score_cdfs(model_bpr, model_dpr, num_users, num_items, device, save_pat
         items_tensor = items
 
         with torch.no_grad():
-            bpr_score = model_bpr(user_tensor, items_tensor)
+            bpr_score = model_bpr.score(user_tensor, items_tensor)
             mean, _, _ = model_dpr(user_tensor, items_tensor)
 
         bpr_scores.append(bpr_score.cpu().numpy())
@@ -138,8 +138,6 @@ def load_implicit_feedback_data(ratings_path="../ml-20m/ratings.csv", neg_k=5, b
 
     # Convert to interaction tuples
     interaction_tuples = list(zip(interactions['userId'], interactions['movieId']))
-
-    # Sample 1/20 of interactions AFTER full mapping
     sampled_interactions = pd.DataFrame(interaction_tuples, columns=["userId", "movieId"]).sample(frac=1/20, random_state=42)
     sampled_interaction_tuples = list(zip(sampled_interactions['userId'], sampled_interactions['movieId']))
 
@@ -152,7 +150,29 @@ def load_implicit_feedback_data(ratings_path="../ml-20m/ratings.csv", neg_k=5, b
 
     return num_users, num_items, train_loader, val_interactions
 
+@torch.no_grad()
+def evaluate_recall(model, num_items, val_data, k, device, full=False):
+    model.eval()
+    recalls = []
 
+    for user, pos_item in tqdm(val_data, desc="Evaluating", leave=False):
+        user_tensor = torch.tensor([user] * num_items, device=device)
+        item_tensor = torch.arange(num_items, device=device)
+
+        mean, std, _ = model(user_tensor, item_tensor)
+
+        score = mean  # Ranking based on mean
+
+        _, topk_indices = torch.topk(score, k)
+
+        if full:
+            recall = 1.0 if pos_item in topk_indices.tolist() else 0.0
+        else:
+            recall = 1.0 if pos_item in topk_indices.tolist() else 0.0
+
+        recalls.append(recall)
+
+    return np.mean(recalls)
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -166,6 +186,7 @@ def main():
     # Train BPR for comparison
     model_bpr = BPR(num_users, num_items, rank).to(device)
     bpr_path = "checkpoints/bpr_best_model_neg_k5_lr0.01_wd0.01.pth"
+    
     if os.path.exists(bpr_path):
         model_bpr.load_state_dict(torch.load(bpr_path))
     else:
@@ -174,12 +195,16 @@ def main():
 
     # Train DPR
     model_dpr = DPR(num_users, num_items, rank).to(device)
+    
+    #print("Evaluate before training:", evaluate_recall(model_dpr,num_items, val_data, k, device))
+    
     optimizer = optim.Adam(model_dpr.parameters(), lr=lr)
     recall_dpr, losses_dpr = train_dpr(model_dpr, train_loader, val_data, optimizer, num_items, epochs, k, device)
+    
     torch.save(model_dpr.state_dict(), "dpr_model.pth")
-    full_recall = evaluate_recall(model_dpr,num_items, val_data, k, device, full=True, is_dpr=True)
+    full_recall = evaluate_recall(model_dpr,num_items, val_data, k, device)
     print(f"DPR Full Recall@{k}: {full_recall:.4f}")
-
+    #model_dpr.load_state_dict(torch.load("dpr_model.pth"))
     # Save results to file
     with open("results.txt", "a") as f:
         f.write(f"DPR Recall@{k} (sampled): {recall_dpr[-1]:.4f}\n")

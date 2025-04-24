@@ -39,6 +39,9 @@ class BPR(torch.nn.Module):
     def bpr_loss(self, pos_scores, neg_scores):
         return -torch.log(self.sigmoid(pos_scores - neg_scores)).mean()
 
+    def score(self, user_ids, item_ids):
+        return self.nmf(user_ids, item_ids)
+
 def train_bpr(model, dataloader, val_data, optimizer, num_items, epochs=5, k=10, device='cpu'):
     model.to(device)
     recall_scores = []
