@@ -118,24 +118,35 @@ def plot_score_cdfs(model_bpr, model_dpr, num_users, num_items, device, save_pat
     plt.savefig(save_path)
     plt.close()
     
-def load_implicit_feedback_data(ratings_path="../ml-20m/ratings.csv", neg_k=2, batch_size=256, val_ratio=0.1):
+def load_implicit_feedback_data(ratings_path="../ml-20m/ratings.csv", neg_k=5, batch_size=1024, val_ratio=0.1):
 
     # Load the ratings file
     ratings_df = pd.read_csv(ratings_path)
     print("Ratings loaded.")
+
+    # Drop duplicates to get clean interactions
     interactions = ratings_df[['userId', 'movieId']].drop_duplicates()
 
-    # Map userId and movieId to indices starting from 0
+    # Build full mappings (to preserve consistency with model checkpoint)
     user2id = {uid: i for i, uid in enumerate(interactions['userId'].unique())}
     item2id = {iid: i for i, iid in enumerate(interactions['movieId'].unique())}
-
     interactions['userId'] = interactions['userId'].map(user2id)
     interactions['movieId'] = interactions['movieId'].map(item2id)
 
     num_users = len(user2id)
     num_items = len(item2id)
+
+    # Convert to interaction tuples
     interaction_tuples = list(zip(interactions['userId'], interactions['movieId']))
-    train_interactions, val_interactions = train_test_split(interaction_tuples, test_size=val_ratio, random_state=42)
+
+    # Sample 1/20 of interactions AFTER full mapping
+    sampled_interactions = pd.DataFrame(interaction_tuples, columns=["userId", "movieId"]).sample(frac=1/20, random_state=42)
+    sampled_interaction_tuples = list(zip(sampled_interactions['userId'], sampled_interactions['movieId']))
+
+    # Train/val split
+    train_interactions, val_interactions = train_test_split(sampled_interaction_tuples, test_size=val_ratio, random_state=42)
+
+    # Dataset & DataLoader
     train_dataset = MovieLensTripletDataset(interactions=train_interactions, num_items=num_items, neg_k=neg_k)
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
@@ -152,9 +163,9 @@ def main():
     k = 10
     lr = 1e-3
 
-    # Train BPR for comparison (assume pretrained or load if exists)
+    # Train BPR for comparison
     model_bpr = BPR(num_users, num_items, rank).to(device)
-    bpr_path = "checkpoints/bpr_models/bpr_best_model_neg_k5_lr0.01_wd0.1.pth"
+    bpr_path = "checkpoints/bpr_best_model_neg_k5_lr0.01_wd0.01.pth"
     if os.path.exists(bpr_path):
         model_bpr.load_state_dict(torch.load(bpr_path))
     else:
